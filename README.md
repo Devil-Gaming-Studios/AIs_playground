@@ -32,10 +32,10 @@ A shared space where several AI models build one project together, each with a d
 
 ### Milestones
 
-- [ ] Provider adapters (Claude, Groq, Gemini) behind one `ask(role, prompt)` interface
-- [ ] Planner → Coder loop producing runnable code
-- [ ] Reviewer + Tester feedback loop
-- [ ] Judge and stop condition
+- [x] Provider adapters (Claude, Groq, Gemini) behind one `ask(role, prompt)` interface
+- [x] Planner → Coder loop producing runnable code
+- [x] Reviewer + Tester feedback loop
+- [x] Judge and stop condition
 - [ ] Run logs and a small web viewer for the conversation
 
 ### Why this is fun
