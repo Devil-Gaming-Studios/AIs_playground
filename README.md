@@ -74,7 +74,7 @@ python orchestrator.py "Build a CLI todo application" --run-tests --test-timeout
 python orchestrator.py "Build a CLI todo application" --run-tests --docker-image round-table-test-sandbox:latest
 ```
 
-The container runs as a non-root user with no network, a read-only root filesystem and workspace mount, dropped Linux capabilities, no-new-privileges, and CPU, memory, process-count, and time limits. The workspace is mounted read-only; tests that need temporary files should use pytest's `tmp_path` fixture or `/tmp`.
+The container runs as a non-root user with no network, a read-only root filesystem, read-only mounts limited to generated `src/` and `tests/` (so prompts and logs are not exposed), dropped Linux capabilities, no-new-privileges, and CPU, memory, process-count, and time limits. Only generated source and test directories are mounted, both read-only; `plan.md`, `log.json`, and transcripts are not exposed to generated tests. Tests that need temporary files should use pytest's `tmp_path` fixture or `/tmp`. Pytest output retained for the Judge is capped at 100 KB.
 
 The sandbox image includes pytest. If generated tests need additional third-party packages, add reviewed, pinned dependencies to `Dockerfile.sandbox` and rebuild the image. The image build needs network access to download its base image and Python packages; test execution uses `--network=none`.
 
