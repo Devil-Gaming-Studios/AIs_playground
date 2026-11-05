@@ -254,6 +254,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.run_tests:
         print("Warning: generated tests are untrusted; Docker provides defense-in-depth, not a perfect security boundary.")
-    print("Run saved to", run(
-        args.task, args.rounds, args.run_tests, args.docker_image, args.test_timeout
-    ))
+    try:
+        run_dir = run(args.task, args.rounds, args.run_tests, args.docker_image, args.test_timeout)
+    except RuntimeError as exc:
+        parser.error(str(exc))
+    print("Run saved to", run_dir)
