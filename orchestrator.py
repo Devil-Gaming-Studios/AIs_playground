@@ -59,7 +59,7 @@ def run_pytest(run_dir: Path, timeout: int = 60) -> str:
     if not tests_dir.exists() or not any(tests_dir.rglob("test_*.py")):
         return "No pytest test files were generated."
     env = os.environ.copy()
-    source_dir = str(run_dir / "src")
+    source_dir = str((run_dir / "src").resolve())
     env["PYTHONPATH"] = source_dir + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     try:
         result = subprocess.run(
