@@ -6,16 +6,16 @@ A shared workspace where multiple AI models collaborate to plan, implement, revi
 
 Give the team a plain-English task:
 
-\`\`\`bash
+```bash
 python orchestrator.py "Build a CLI todo application"
-\`\`\`
+```
 
 | Role | Provider / model | Responsibility |
 |---|---|---|
 | Planner | Claude | Creates the specification and implementation plan |
-| Coder | Groq — \`openai/gpt-oss-20b\` | Implements files under \`src/\` |
-| Reviewer | Gemini — \`gemini-2.5-flash\` | Reviews generated source |
-| Tester | Groq — \`llama-3.1-8b-instant\` | Generates pytest files under \`tests/\` |
+| Coder | Groq — `openai/gpt-oss-20b` | Implements files under `src/` |
+| Reviewer | Gemini — `gemini-2.5-flash` | Reviews generated source |
+| Tester | Groq — `llama-3.1-8b-instant` | Generates pytest files under `tests/` |
 | Judge | Claude | Decides whether another implementation round is needed |
 
 The Reviewer and Tester work in parallel. Their reports go to the Judge; the Coder receives feedback if another round is needed.
@@ -28,70 +28,70 @@ Requires Python 3.10 or newer.
 2. Create and activate a virtual environment.
 3. Install dependencies:
 
-   \`\`\`bash
+   ```bash
    python -m venv .venv
    # Windows:
    .venv\Scripts\activate
    # macOS/Linux:
    source .venv/bin/activate
    pip install -r requirements.txt
-   \`\`\`
+   ```
 
-4. Copy \`.env.example\` to \`.env\` and add your API keys:
-   - \`ANTHROPIC_API_KEY\`
-   - \`GROQ_API_KEY\`
-   - \`GEMINI_API_KEY\`
+4. Copy `.env.example` to `.env` and add your API keys:
+   - `ANTHROPIC_API_KEY`
+   - `GROQ_API_KEY`
+   - `GEMINI_API_KEY`
 
-   The orchestrator loads \`.env\` automatically. Keep it private and never commit API keys.
+   The orchestrator loads `.env` automatically. Keep it private and never commit API keys.
 
 ## Run
 
 Generated tests are not executed automatically:
 
-\`\`\`bash
+```bash
 python orchestrator.py "Build a CLI todo application"
 python orchestrator.py "Build a REST API" --rounds 5
-\`\`\`
+```
 
 ### Run generated tests in Docker
 
-The \`--run-tests\` option runs generated pytest files in a dedicated Docker container. Build the sandbox image once from the repository root:
+The `--run-tests` option runs generated pytest files in a dedicated Docker container. Build the sandbox image once from the repository root:
 
-\`\`\`bash
+```bash
 docker build -f Dockerfile.sandbox -t round-table-test-sandbox:latest .
-\`\`\`
+```
 
 Then run:
 
-\`\`\`bash
+```bash
 python orchestrator.py "Build a CLI todo application" --run-tests
-\`\`\`
+```
 
 Optional controls:
 
-\`\`\`bash
+```bash
 python orchestrator.py "Build a CLI todo application" --run-tests --test-timeout 90
 python orchestrator.py "Build a CLI todo application" --run-tests --docker-image round-table-test-sandbox:latest
-\`\`\`
+```
 
-The container runs as a non-root user with no network, a read-only root filesystem and workspace mount, dropped Linux capabilities, no-new-privileges, and CPU, memory, process-count, and time limits. The workspace is mounted read-only; tests that need temporary files should use pytest's \`tmp_path\` fixture or \`/tmp\`.
+The container runs as a non-root user with no network, a read-only root filesystem and workspace mount, dropped Linux capabilities, no-new-privileges, and CPU, memory, process-count, and time limits. The workspace is mounted read-only; tests that need temporary files should use pytest's `tmp_path` fixture or `/tmp`.
 
-The sandbox image includes pytest only. If generated tests need additional third-party packages, add reviewed, pinned dependencies to \`Dockerfile.sandbox\` and rebuild the image. The image build needs network access to download its base image and pytest; test execution uses \`--network=none\`.
+The sandbox image includes pytest and python-dotenv (needed to import the orchestrator in its unit tests). If generated tests need additional third-party packages, add reviewed, pinned dependencies to `Dockerfile.sandbox` and rebuild the image. The image build needs network access to download its base image and Python packages; test execution uses `--network=none`.
 
 **Security:** AI-generated code and tests are untrusted. Docker provides defense-in-depth, not a perfect security boundary. Keep Docker updated, do not mount the Docker socket or sensitive host paths, and use a disposable environment for high-risk workloads. Docker daemon/runtime configuration and host vulnerabilities remain part of the trust boundary.
 
 ## Output
 
-Each run is saved under \`runs/<timestamp>/\`:
+Each run is saved under `runs/<timestamp>/`:
 
-- \`plan.md\` — Planner's specification and task list
-- \`src/\` — generated application source
-- \`tests/\` — generated pytest files
-- \`review.md\` — Reviewer report
-- \`tester.md\` — Tester report
-- \`test-results.txt\` — test execution status and output
-- \`round-N.md\` — round-by-round transcript
-- \`log.json\` — structured prompts and model responses
+- `plan.md` — Planner's specification and task list
+- `src/` — generated application source
+- `tests/` — generated pytest files
+- `review.md` — Reviewer report
+- `tester.md` — Tester report
+- `test-results.txt` — test execution status and output
+- `round-N.md` — round-by-round transcript
+- `log.json` — structured prompts and model responses
 
 Run output is ignored by Git.
 
@@ -99,9 +99,9 @@ Run output is ignored by Git.
 
 Run the orchestrator's unit tests:
 
-\`\`\`bash
+```bash
 pytest -q
-\`\`\`
+```
 
 These tests mock Docker; they do not require a Docker daemon or make provider API calls.
 
@@ -113,6 +113,6 @@ Read [qna.md](qna.md) before contributing. It contains the AI roster, communicat
 
 Browse saved runs in a browser (read-only, localhost only):
 
-\`\`\`bash
+```bash
 python viewer.py --port 8000
-\`\`\`
+```
