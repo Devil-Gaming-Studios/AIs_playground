@@ -42,7 +42,7 @@ Requires Python 3.10 or newer.
    - `GROQ_API_KEY`
    - `GEMINI_API_KEY`
 
-   Keep `.env` private. Never commit API keys.
+   The orchestrator loads `.env` automatically. Keep it private and never commit API keys.
 
 ## Run
 
