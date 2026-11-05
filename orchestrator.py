@@ -4,7 +4,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -14,6 +13,7 @@ from dotenv import load_dotenv
 from providers import build_providers
 
 DEFAULT_DOCKER_IMAGE = "round-table-test-sandbox:latest"
+FENCE = chr(96) * 3
 ROLE_PROMPTS = {
     "planner": "Turn the task into a specification, acceptance criteria, and numbered plan.",
     "coder": "Implement the plan. Output each file as FILE: relative/path followed by a fenced code block. Put application code under src/.",
@@ -21,14 +21,17 @@ ROLE_PROMPTS = {
     "tester": "Write pytest tests for the source. Output each test file as FILE: tests/test_name.py followed by a fenced Python block. Do not claim tests ran unless execution output is supplied.",
     "judge": "Judge the implementation. First non-empty line must be exactly DONE or REVISE, followed by a short reason.",
 }
-FILE_RE = re.compile(r"(?m)^FILE:\\s*(\\S+)\\s*\\r?\\n\x60\x60\x60[^\\r\\n]*\\r?\\n(.*?)\\r?\\n\x60\x60\x60", re.DOTALL)
+FILE_RE = re.compile(
+    r"(?m)^FILE:\s*(\S+)\s*\r?\n" + re.escape(FENCE) + r"[^\r\n]*\r?\n(.*?)\r?\n" + re.escape(FENCE),
+    re.DOTALL,
+)
 
 
 def write_files(reply: str, output_dir: Path, allowed_prefix: str | None = None) -> list[str]:
     root = output_dir.resolve()
     written = []
     for relative, body in FILE_RE.findall(reply):
-        normalized = relative.replace("\\\\", "/")
+        normalized = relative.replace("\\", "/")
         parts = Path(normalized).parts
         if not parts or Path(normalized).is_absolute() or ".." in parts or ":" in parts[0]:
             continue
@@ -38,7 +41,7 @@ def write_files(reply: str, output_dir: Path, allowed_prefix: str | None = None)
         if target == root or root not in target.parents:
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(body.rstrip() + "\\n", encoding="utf-8")
+        target.write_text(body.rstrip() + "\n", encoding="utf-8")
         written.append(Path(*parts).as_posix())
     return written
 
@@ -52,8 +55,8 @@ def collect_source(source_dir: Path) -> str:
                     content = path.read_text(encoding="utf-8")
                 except UnicodeDecodeError:
                     continue
-                sections.append(f"FILE: {path.relative_to(source_dir.parent).as_posix()}\\n\x60\x60\x60\\n{content}\\n\x60\x60\x60")
-    return "\\n\\n".join(sections) or "(No source files have been generated yet.)"
+                sections.append(f"FILE: {path.relative_to(source_dir.parent).as_posix()}\n{FENCE}\n{content}\n{FENCE}")
+    return "\n\n".join(sections) or "(No source files have been generated yet.)"
 
 
 def build_docker_command(run_dir: Path, image: str, container_name: str) -> list[str]:
@@ -103,7 +106,7 @@ def run_pytest(run_dir: Path, timeout: int = 60, docker_image: str = DEFAULT_DOC
         return (
             f"Docker image '{docker_image}' is unavailable or Docker cannot be reached. "
             "Build it with: docker build -f Dockerfile.sandbox -t "
-            f"{docker_image} .\\n{detail}"
+            f"{docker_image} .\n{detail}"
         )
 
     container_name = f"round-table-test-{uuid.uuid4().hex[:12]}"
@@ -124,8 +127,8 @@ def run_pytest(run_dir: Path, timeout: int = 60, docker_image: str = DEFAULT_DOC
         return f"Docker test container timed out after {timeout} seconds and cleanup was requested."
     except FileNotFoundError:
         return "Docker CLI disappeared before the test container could start."
-    output = (result.stdout + "\\n" + result.stderr).strip()
-    return f"Exit code: {result.returncode}\\n{output}"
+    output = (result.stdout + "\n" + result.stderr).strip()
+    return f"Exit code: {result.returncode}\n{output}"
 
 
 def run(
@@ -159,11 +162,11 @@ def run(
         (run_dir / "plan.md").write_text(plan, encoding="utf-8")
         feedback = ""
         for round_number in range(1, max_rounds + 1):
-            coder_prompt = f"Task:\\n{task}\\n\\nPlan:\\n{plan}\\n\\nPrevious feedback:\\n{feedback or 'None'}"
+            coder_prompt = f"Task:\n{task}\n\nPlan:\n{plan}\n\nPrevious feedback:\n{feedback or 'None'}"
             code_reply = step("coder", coder_prompt)
             code_files = write_files(code_reply, run_dir, "src")
             source = collect_source(src_dir)
-            reviewer_prompt = f"Task:\\n{task}\\n\\nPlan:\\n{plan}\\n\\nSource files:\\n{source}"
+            reviewer_prompt = f"Task:\n{task}\n\nPlan:\n{plan}\n\nSource files:\n{source}"
             tester_prompt = reviewer_prompt
             with ThreadPoolExecutor(max_workers=2) as pool:
                 review_future = pool.submit(step, "reviewer", reviewer_prompt)
@@ -178,20 +181,20 @@ def run(
             )
             (run_dir / "test-results.txt").write_text(execution, encoding="utf-8")
             judge_prompt = (
-                f"Task:\\n{task}\\n\\nPlan:\\n{plan}\\n\\nSource:\\n{source}\\n\\n"
-                f"Review:\\n{review}\\n\\nTester:\\n{tester_reply}\\n\\nExecution:\\n{execution}"
+                f"Task:\n{task}\n\nPlan:\n{plan}\n\nSource:\n{source}\n\n"
+                f"Review:\n{review}\n\nTester:\n{tester_reply}\n\nExecution:\n{execution}"
             )
             verdict = step("judge", judge_prompt)
             first_line = next((line.strip() for line in verdict.splitlines() if line.strip()), "").upper()
             print(f"[round {round_number}] source_files={len(code_files)} test_files={len(test_files)} verdict={first_line or '?'}")
             (run_dir / f"round-{round_number}.md").write_text(
-                f"# Round {round_number}\\n\\n## Coder\\n\\n{code_reply}\\n\\n## Reviewer\\n\\n{review}\\n\\n"
-                f"## Tester\\n\\n{tester_reply}\\n\\n## Test execution\\n\\n{execution}\\n\\n## Judge\\n\\n{verdict}\\n",
+                f"# Round {round_number}\n\n## Coder\n\n{code_reply}\n\n## Reviewer\n\n{review}\n\n"
+                f"## Tester\n\n{tester_reply}\n\n## Test execution\n\n{execution}\n\n## Judge\n\n{verdict}\n",
                 encoding="utf-8",
             )
             if first_line == "DONE":
                 break
-            feedback = f"Review:\\n{review}\\n\\nTester:\\n{tester_reply}\\n\\nExecution:\\n{execution}\\n\\nJudge:\\n{verdict}"
+            feedback = f"Review:\n{review}\n\nTester:\n{tester_reply}\n\nExecution:\n{execution}\n\nJudge:\n{verdict}"
     finally:
         (run_dir / "log.json").write_text(json.dumps(log, indent=2, ensure_ascii=False), encoding="utf-8")
     return run_dir
