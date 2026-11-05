@@ -78,7 +78,7 @@ def test_docker_command_enables_sandbox_restrictions(tmp_path: Path):
     assert "--user=65532:65532" in command
     assert f"type=bind,source={(tmp_path / 'src').resolve()},target=/workspace/src,readonly" in joined
     assert f"type=bind,source={(tmp_path / 'tests').resolve()},target=/workspace/tests,readonly" in joined
-    assert str(tmp_path.resolve()) not in joined
+    assert f"type=bind,source={tmp_path.resolve()},target=/workspace,readonly" not in joined
     assert command[command.index("--entrypoint") + 1] == "python"
     assert command[-6:] == ["-m", "pytest", "-p", "no:cacheprovider", "tests", "-q"]
 
