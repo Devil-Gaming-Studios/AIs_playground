@@ -42,3 +42,13 @@ def test_accepts_multiple_files(tmp_path: Path):
 
 def test_ignores_text_without_file_blocks(tmp_path: Path):
     assert write_files("No file block here.", tmp_path) == []
+
+
+def test_enforces_allowed_output_directory(tmp_path: Path):
+    reply = (
+        "FILE: src/app.py\n```python\nprint('ok')\n```\n\n"
+        "FILE: plan.md\n```text\nreplace the plan\n```"
+    )
+
+    assert write_files(reply, tmp_path, "src") == ["src/app.py"]
+    assert not (tmp_path / "plan.md").exists()
