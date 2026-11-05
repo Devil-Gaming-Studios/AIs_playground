@@ -2,6 +2,7 @@
 import argparse
 import html
 import os
+import itertools
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -10,6 +11,7 @@ from urllib.parse import quote, unquote, urlparse
 RUNS = Path("runs")
 MAX_BYTES = 1_000_000  # largest file we will show
 MAX_ENTRIES = 500  # largest directory listing we will show
+MAX_SCAN = 5000  # most directory entries we will even read
 SLOTS = threading.BoundedSemaphore(16)  # max concurrent requests
 STYLE = (
     "<style>body{font:15px/1.5 system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem}"
@@ -48,12 +50,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
-        if not SLOTS.acquire(blocking=False):
-            return self.send(503, page("Busy", "<h1>Busy, try again</h1>"))
-        try:
-            self.handle_get()
-        finally:
-            SLOTS.release()
+        self.handle_get()
 
     def handle_get(self) -> None:
         parts = [unquote(p) for p in urlparse(self.path).path.split("/") if p]
@@ -61,8 +58,11 @@ class Handler(BaseHTTPRequestHandler):
         if target is None or not target.exists():
             return self.send(404, page("Not found", "<h1>Not found</h1><a href='/'>Back</a>"))
         if target.is_dir():
-            items = sorted(target.iterdir(), reverse=(target == RUNS.resolve()))
-            more = "<li>[listing truncated]</li>" if len(items) > MAX_ENTRIES else ""
+            with os.scandir(target) as entries:  # read at most MAX_SCAN entries, never the whole directory
+                names = [e.name for e in itertools.islice(entries, MAX_SCAN + 1)]
+            scan_cut = len(names) > MAX_SCAN
+            items = [target / n for n in sorted(names[:MAX_SCAN], reverse=(target == RUNS.resolve()))]
+            more = "<li>[listing truncated]</li>" if (scan_cut or len(items) > MAX_ENTRIES) else ""
             links = "".join(
                 f"<li><a href='{html.escape(quote('/' + '/'.join([*parts, p.name])))}'>{html.escape(p.name)}"
                 f"{'/' if p.is_dir() else ''}</a></li>"
@@ -76,10 +76,32 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+class BoundedServer(ThreadingHTTPServer):
+    """Refuse new connections before a thread is created once 16 requests are in flight."""
+
+    daemon_threads = True
+
+    def process_request(self, request, client_address) -> None:
+        if not SLOTS.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            SLOTS.release()
+            raise
+
+    def process_request_thread(self, request, client_address) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            SLOTS.release()
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="View Round Table runs in a browser.")
     ap.add_argument("--port", type=int, default=8000)
     args = ap.parse_args()
     RUNS.mkdir(exist_ok=True)
     print(f"Viewing runs at http://127.0.0.1:{args.port}")
-    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    BoundedServer(("127.0.0.1", args.port), Handler).serve_forever()
