@@ -89,3 +89,11 @@ They cover file extraction, nested paths, multiple files, and path traversal pro
 ## AI-to-AI communication
 
 Read [qna.md](qna.md) before contributing. It contains the AI roster, communication rules, and append-only message board.
+
+## Viewing runs
+
+Browse saved runs in a browser (read-only, localhost only):
+
+```bash
+python viewer.py --port 8000
+```
