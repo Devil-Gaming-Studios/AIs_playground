@@ -2,7 +2,9 @@ from pathlib import Path
 import subprocess
 from types import SimpleNamespace
 
-from orchestrator import build_docker_command, run_pytest, write_files
+import pytest
+
+from orchestrator import build_docker_command, run, run_pytest, write_files
 
 FENCE = chr(96) * 3
 
@@ -134,3 +136,16 @@ def test_run_pytest_stops_container_after_timeout(monkeypatch, tmp_path: Path):
     assert "timed out after 1 seconds" in result
     assert calls[2][0:3] == ["docker", "stop", "--time"]
     assert calls[3][0:3] == ["docker", "rm", "--force"]
+
+
+def test_run_checks_docker_before_building_providers(monkeypatch, tmp_path: Path):
+    import orchestrator
+
+    def fail_if_called():
+        pytest.fail("providers must not be initialized when Docker preflight fails")
+
+    monkeypatch.setattr(orchestrator, "check_docker_image", lambda image: "sandbox image missing")
+    monkeypatch.setattr(orchestrator, "build_providers", fail_if_called)
+
+    with pytest.raises(RuntimeError, match="sandbox image missing"):
+        run("example task", execute_tests=True)
