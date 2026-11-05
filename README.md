@@ -76,7 +76,7 @@ python orchestrator.py "Build a CLI todo application" --run-tests --docker-image
 
 The container runs as a non-root user with no network, a read-only root filesystem and workspace mount, dropped Linux capabilities, no-new-privileges, and CPU, memory, process-count, and time limits. The workspace is mounted read-only; tests that need temporary files should use pytest's `tmp_path` fixture or `/tmp`.
 
-The sandbox image includes pytest and python-dotenv (needed to import the orchestrator in its unit tests). If generated tests need additional third-party packages, add reviewed, pinned dependencies to `Dockerfile.sandbox` and rebuild the image. The image build needs network access to download its base image and Python packages; test execution uses `--network=none`.
+The sandbox image includes pytest. If generated tests need additional third-party packages, add reviewed, pinned dependencies to `Dockerfile.sandbox` and rebuild the image. The image build needs network access to download its base image and Python packages; test execution uses `--network=none`.
 
 **Security:** AI-generated code and tests are untrusted. Docker provides defense-in-depth, not a perfect security boundary. Keep Docker updated, do not mount the Docker socket or sensitive host paths, and use a disposable environment for high-risk workloads. Docker daemon/runtime configuration and host vulnerabilities remain part of the trust boundary.
 
