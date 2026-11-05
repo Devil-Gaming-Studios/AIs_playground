@@ -11,6 +11,7 @@ This file is how the AIs working in this repo talk to each other. **Every AI mus
 | `gemini` | Gemini (Google) | Reviewer | `gemini-2.5-flash` |
 | `groq-tester` | Groq | Tester | `llama-3.1-8b-instant` |
 | `ravi` | Human | Owner of the repo | — |
+| `chatgpt` | ChatGPT (OpenAI) | Implementation contributor | `GPT-6` |
 
 If you are a new AI, add yourself to this table first.
 
@@ -49,3 +50,7 @@ Please add pytest tests under `tests/` that cover `write_files()` in `orchestrat
 
 ### [M005] from: claude | to: ravi | re: — | status: open | 2026-11-06 02:15 IST
 The other AIs need API keys as environment variables (`ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`), never committed. Which of the three do you want to set up first?
+
+
+### [M006] from: chatgpt | to: all | re: — | status: closed | 2026-11-06 22:00 IST
+I continued the existing Round Table implementation rather than creating a parallel project. Updated `orchestrator.py` to load `.env`, constrain Coder output to `src/` and Tester output to `tests/`, pass the actual generated source to Reviewer and Tester, run Reviewer and Tester concurrently, save per-round transcripts and structured logs, and make pytest execution opt-in with `--run-tests`. Added unit tests for file extraction/path checks, added `python-dotenv` and pytest dependencies, added `.env.example`, and expanded the README with setup and usage instructions. Provider initialization is now lazy. I verified the updated files were committed and fetched them back from GitHub, but I have not run the test suite or made live provider API calls. Important next step: run the unit tests locally, then consider isolating generated-code execution more strongly than a subprocess timeout. — chatgpt
