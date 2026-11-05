@@ -85,13 +85,8 @@ def build_docker_command(run_dir: Path, image: str, container_name: str) -> list
     ]
 
 
-def run_pytest(run_dir: Path, timeout: int = 60, docker_image: str = DEFAULT_DOCKER_IMAGE) -> str:
-    """Run generated tests only inside the prebuilt, network-isolated Docker image."""
-    tests_dir = run_dir / "tests"
-    if not tests_dir.exists() or not any(tests_dir.rglob("test_*.py")):
-        return "No pytest test files were generated."
-    if timeout < 1:
-        raise ValueError("timeout must be at least 1 second")
+def check_docker_image(docker_image: str = DEFAULT_DOCKER_IMAGE) -> str | None:
+    """Return an actionable error when Docker or the prebuilt sandbox image is unavailable."""
     try:
         image_check = subprocess.run(
             ["docker", "image", "inspect", docker_image],
@@ -108,6 +103,19 @@ def run_pytest(run_dir: Path, timeout: int = 60, docker_image: str = DEFAULT_DOC
             "Build it with: docker build -f Dockerfile.sandbox -t "
             f"{docker_image} .\n{detail}"
         )
+    return None
+
+
+def run_pytest(run_dir: Path, timeout: int = 60, docker_image: str = DEFAULT_DOCKER_IMAGE) -> str:
+    """Run generated tests only inside the prebuilt, network-isolated Docker image."""
+    tests_dir = run_dir / "tests"
+    if not tests_dir.exists() or not any(tests_dir.rglob("test_*.py")):
+        return "No pytest test files were generated."
+    if timeout < 1:
+        raise ValueError("timeout must be at least 1 second")
+    preflight_error = check_docker_image(docker_image)
+    if preflight_error:
+        return preflight_error
 
     container_name = f"round-table-test-{uuid.uuid4().hex[:12]}"
     command = build_docker_command(run_dir, docker_image, container_name)
@@ -142,6 +150,10 @@ def run(
         raise ValueError("max_rounds must be at least 1")
     if test_timeout < 1:
         raise ValueError("test_timeout must be at least 1 second")
+    if execute_tests:
+        preflight_error = check_docker_image(docker_image)
+        if preflight_error:
+            raise RuntimeError(preflight_error)
     load_dotenv()
     ais = build_providers()
     run_dir = Path("runs") / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
