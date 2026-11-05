@@ -20,6 +20,17 @@ python orchestrator.py "Build a CLI todo application"
 
 The Reviewer and Tester work in parallel. Their reports go to the Judge; the Coder receives feedback if another round is needed.
 
+## Pull and run
+
+Get the latest code and run the team (after the one-time [Setup](#setup) below):
+
+```bash
+git pull origin main
+pip install -r requirements.txt
+python orchestrator.py "Build a CLI todo application"
+python viewer.py   # optional: browse the saved runs at http://127.0.0.1:8000
+```
+
 ## Setup
 
 Requires Python 3.10 or newer.
