@@ -9,6 +9,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
 from providers import build_providers
 
 ROLE_PROMPTS = {
@@ -21,13 +22,15 @@ ROLE_PROMPTS = {
 FILE_RE = re.compile(r"(?m)^FILE:\s*(\S+)\s*\r?\n```[^\r\n]*\r?\n(.*?)\r?\n```", re.DOTALL)
 
 
-def write_files(reply: str, output_dir: Path) -> list[str]:
+def write_files(reply: str, output_dir: Path, allowed_prefix: str | None = None) -> list[str]:
     root = output_dir.resolve()
     written = []
     for relative, body in FILE_RE.findall(reply):
         normalized = relative.replace("\\", "/")
         parts = Path(normalized).parts
         if not parts or Path(normalized).is_absolute() or ".." in parts or ":" in parts[0]:
+            continue
+        if allowed_prefix and parts[0] != allowed_prefix:
             continue
         target = root.joinpath(*parts).resolve()
         if target == root or root not in target.parents:
@@ -73,8 +76,9 @@ def run_pytest(run_dir: Path, timeout: int = 60) -> str:
 def run(task: str, max_rounds: int = 3, execute_tests: bool = False) -> Path:
     if max_rounds < 1:
         raise ValueError("max_rounds must be at least 1")
+    load_dotenv()
     ais = build_providers()
-    run_dir = Path("runs") / datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = Path("runs") / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     src_dir = run_dir / "src"
     run_dir.mkdir(parents=True, exist_ok=False)
     src_dir.mkdir(parents=True)
@@ -94,7 +98,7 @@ def run(task: str, max_rounds: int = 3, execute_tests: bool = False) -> Path:
         for round_number in range(1, max_rounds + 1):
             coder_prompt = f"Task:\n{task}\n\nPlan:\n{plan}\n\nPrevious feedback:\n{feedback or 'None'}"
             code_reply = step("coder", coder_prompt)
-            code_files = write_files(code_reply, run_dir)
+            code_files = write_files(code_reply, run_dir, "src")
             source = collect_source(src_dir)
             reviewer_prompt = f"Task:\n{task}\n\nPlan:\n{plan}\n\nSource files:\n{source}"
             tester_prompt = reviewer_prompt
@@ -103,7 +107,7 @@ def run(task: str, max_rounds: int = 3, execute_tests: bool = False) -> Path:
                 tester_future = pool.submit(step, "tester", tester_prompt)
                 review = review_future.result()
                 tester_reply = tester_future.result()
-            test_files = write_files(tester_reply, run_dir)
+            test_files = write_files(tester_reply, run_dir, "tests")
             (run_dir / "review.md").write_text(review, encoding="utf-8")
             (run_dir / "tester.md").write_text(tester_reply, encoding="utf-8")
             execution = run_pytest(run_dir) if execute_tests else (
