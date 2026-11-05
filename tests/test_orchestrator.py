@@ -1,10 +1,11 @@
 from pathlib import Path
+import io
 import subprocess
 from types import SimpleNamespace
 
 import pytest
 
-from orchestrator import build_docker_command, run, run_pytest, write_files
+from orchestrator import MAX_TEST_OUTPUT_BYTES, build_docker_command, run, run_pytest, write_files
 
 FENCE = chr(96) * 3
 
@@ -61,10 +62,13 @@ def test_enforces_allowed_output_directory(tmp_path: Path):
 
 
 def test_docker_command_enables_sandbox_restrictions(tmp_path: Path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "tests").mkdir()
     command = build_docker_command(tmp_path, "sandbox:test", "round-table-test")
     joined = " ".join(command)
 
     assert "--network=none" in command
+    assert "--ipc=none" in command
     assert "--read-only" in command
     assert "--cap-drop=ALL" in command
     assert "--security-opt=no-new-privileges:true" in command
@@ -72,8 +76,11 @@ def test_docker_command_enables_sandbox_restrictions(tmp_path: Path):
     assert "--memory=512m" in command
     assert "--cpus=1" in command
     assert "--user=65532:65532" in command
-    assert f"type=bind,source={tmp_path.resolve()},target=/workspace,readonly" in joined
-    assert command[-7:] == ["python", "-m", "pytest", "-p", "no:cacheprovider", "tests", "-q"]
+    assert f"type=bind,source={(tmp_path / 'src').resolve()},target=/workspace/src,readonly" in joined
+    assert f"type=bind,source={(tmp_path / 'tests').resolve()},target=/workspace/tests,readonly" in joined
+    assert str(tmp_path.resolve()) not in joined
+    assert command[command.index("--entrypoint") + 1] == "python"
+    assert command[-6:] == ["-m", "pytest", "-p", "no:cacheprovider", "tests", "-q"]
 
 
 def test_run_pytest_uses_docker(monkeypatch, tmp_path: Path):
@@ -82,19 +89,24 @@ def test_run_pytest_uses_docker(monkeypatch, tmp_path: Path):
     (tests_dir / "test_sample.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
     calls = []
 
+    class FakeProcess:
+        stdout = io.BytesIO(b"1 passed")
+
+        def wait(self, timeout=None):
+            return 0
+
     def fake_run(command, **kwargs):
         calls.append(command)
-        if command[:3] == ["docker", "image", "inspect"]:
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
-        return SimpleNamespace(returncode=0, stdout="1 passed", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
 
     result = run_pytest(tmp_path)
 
     assert result == "Exit code: 0\n1 passed"
-    assert len(calls) == 2
-    assert calls[1][0:3] == ["docker", "run", "--rm"]
+    assert len(calls) == 1
+    assert calls[0][:3] == ["docker", "image", "inspect"]
 
 
 def test_run_pytest_does_not_run_when_image_is_missing(monkeypatch, tmp_path: Path):
@@ -121,21 +133,29 @@ def test_run_pytest_stops_container_after_timeout(monkeypatch, tmp_path: Path):
     (tests_dir / "test_sample.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
     calls = []
 
+    class FakeProcess:
+        stdout = io.BytesIO(b"")
+
+        def wait(self, timeout=None):
+            if timeout == 1:
+                raise subprocess.TimeoutExpired("docker run", 1)
+            return -9
+
+        def kill(self):
+            pass
+
     def fake_run(command, **kwargs):
         calls.append(command)
-        if command[:3] == ["docker", "image", "inspect"]:
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
-        if command[:2] == ["docker", "run"]:
-            raise subprocess.TimeoutExpired(command, 1)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
 
     result = run_pytest(tmp_path, timeout=1)
 
     assert "timed out after 1 seconds" in result
-    assert calls[2][0:3] == ["docker", "stop", "--time"]
-    assert calls[3][0:3] == ["docker", "rm", "--force"]
+    assert calls[1][0:3] == ["docker", "stop", "--time"]
+    assert calls[2][0:3] == ["docker", "rm", "--force"]
 
 
 def test_run_checks_docker_before_building_providers(monkeypatch, tmp_path: Path):
@@ -149,3 +169,26 @@ def test_run_checks_docker_before_building_providers(monkeypatch, tmp_path: Path
 
     with pytest.raises(RuntimeError, match="sandbox image missing"):
         run("example task", execute_tests=True)
+
+
+def test_run_pytest_caps_retained_output(monkeypatch, tmp_path: Path):
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_sample.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+
+    class FakeProcess:
+        stdout = io.BytesIO(b"x" * (MAX_TEST_OUTPUT_BYTES + 100))
+
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+
+    result = run_pytest(tmp_path)
+
+    assert len(result.encode("utf-8")) < MAX_TEST_OUTPUT_BYTES + 200
+    assert "[pytest output truncated after 100000 bytes]" in result
