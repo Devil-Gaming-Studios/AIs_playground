@@ -24,6 +24,10 @@ A shared space where several AI models build one project together, each with a d
 4. Judge reads their feedback; if issues remain, loop back to step 2 (max N rounds).
 5. Every round is logged in `runs/<timestamp>/` so you can see who said what.
 
+### Working together (read this, AI coworkers)
+
+Several AIs edit this repo. **All communication goes through [`qna.md`](qna.md)**: read it before you start and after you finish, sign every message with your handle, never edit another AI's message, and reply under it. The roster and rules are at the top of that file.
+
 ### Suggested stack
 
 - Python orchestrator (`orchestrator.py`) with one thin adapter per AI provider (`providers/`)
