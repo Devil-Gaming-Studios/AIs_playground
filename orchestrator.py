@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from providers import build_providers
 
 DEFAULT_DOCKER_IMAGE = "round-table-test-sandbox:latest"
+MAX_TEST_OUTPUT_BYTES = 100_000
 FENCE = chr(96) * 3
 ROLE_PROMPTS = {
     "planner": "Turn the task into a specification, acceptance criteria, and numbered plan.",
@@ -61,11 +62,13 @@ def collect_source(source_dir: Path) -> str:
 
 def build_docker_command(run_dir: Path, image: str, container_name: str) -> list[str]:
     """Build a locked-down, read-only Docker invocation for generated tests."""
-    workspace = str(run_dir.resolve())
+    source_dir = str((run_dir / "src").resolve())
+    tests_dir = str((run_dir / "tests").resolve())
     return [
         "docker", "run", "--rm", "--pull=never", "--init",
         "--name", container_name,
         "--network=none",
+        "--ipc=none",
         "--read-only",
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges:true",
@@ -75,13 +78,15 @@ def build_docker_command(run_dir: Path, image: str, container_name: str) -> list
         "--cpus=1",
         "--user=65532:65532",
         "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=64m",
-        "--mount", f"type=bind,source={workspace},target=/workspace,readonly",
+        "--mount", f"type=bind,source={source_dir},target=/workspace/src,readonly",
+        "--mount", f"type=bind,source={tests_dir},target=/workspace/tests,readonly",
         "--workdir=/workspace",
         "--env=PYTHONPATH=/workspace/src",
         "--env=PYTHONDONTWRITEBYTECODE=1",
         "--env=HOME=/tmp",
+        "--entrypoint", "python",
         image,
-        "python", "-m", "pytest", "-p", "no:cacheprovider", "tests", "-q",
+        "-m", "pytest", "-p", "no:cacheprovider", "tests", "-q",
     ]
 
 
@@ -119,10 +124,30 @@ def run_pytest(run_dir: Path, timeout: int = 60, docker_image: str = DEFAULT_DOC
 
     container_name = f"round-table-test-{uuid.uuid4().hex[:12]}"
     command = build_docker_command(run_dir, docker_image, container_name)
+    captured = bytearray()
+    output_truncated = False
+
+    def drain_output(stream) -> None:
+        nonlocal output_truncated
+        while True:
+            chunk = stream.read(8192)
+            if not chunk:
+                break
+            remaining = MAX_TEST_OUTPUT_BYTES - len(captured)
+            if remaining > 0:
+                captured.extend(chunk[:remaining])
+            if len(chunk) > remaining:
+                output_truncated = True
+
     try:
-        result = subprocess.run(
-            command, capture_output=True, text=True, timeout=timeout, check=False,
-        )
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except FileNotFoundError:
+        return "Docker CLI disappeared before the test container could start."
+
+    reader = threading.Thread(target=drain_output, args=(process.stdout,), daemon=True)
+    reader.start()
+    try:
+        return_code = process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         for cleanup in (
             ["docker", "stop", "--time", "1", container_name],
@@ -132,11 +157,18 @@ def run_pytest(run_dir: Path, timeout: int = 60, docker_image: str = DEFAULT_DOC
                 subprocess.run(cleanup, capture_output=True, text=True, timeout=10, check=False)
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 pass
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        reader.join(timeout=5)
         return f"Docker test container timed out after {timeout} seconds and cleanup was requested."
-    except FileNotFoundError:
-        return "Docker CLI disappeared before the test container could start."
-    output = (result.stdout + "\n" + result.stderr).strip()
-    return f"Exit code: {result.returncode}\n{output}"
+    reader.join()
+    output = captured.decode("utf-8", errors="replace")
+    if output_truncated:
+        output += f"\\n[pytest output truncated after {MAX_TEST_OUTPUT_BYTES} bytes]"
+    return f"Exit code: {return_code}\\n{output}".rstrip()
 
 
 def run(
