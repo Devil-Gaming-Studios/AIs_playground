@@ -167,8 +167,8 @@ def run_pytest(run_dir: Path, timeout: int = 60, docker_image: str = DEFAULT_DOC
     reader.join()
     output = captured.decode("utf-8", errors="replace")
     if output_truncated:
-        output += f"\\n[pytest output truncated after {MAX_TEST_OUTPUT_BYTES} bytes]"
-    return f"Exit code: {return_code}\\n{output}".rstrip()
+        output += f"\n[pytest output truncated after {MAX_TEST_OUTPUT_BYTES} bytes]"
+    return f"Exit code: {return_code}\n{output}".rstrip()
 
 
 def run(
