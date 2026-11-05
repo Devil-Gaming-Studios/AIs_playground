@@ -1,47 +1,91 @@
 # AIs Playground
 
-A shared space where several AI models build one project together, each with a defined role.
+A shared workspace where multiple AI models collaborate to plan, implement, review, test, and judge software projects.
 
-## Project: Round Table — a multi-AI code-building pipeline
+## Round Table
 
-**Idea:** Give Round Table a plain-English task (e.g. "build a CLI todo app"). Different AIs collaborate on it in turns, using this repo as the shared workspace.
+Give the team a plain-English task:
 
-### Roles
+```bash
+python orchestrator.py "Build a CLI todo application"
+```
 
-| Role | AI | Job |
-|------|----|-----|
-| Planner | Claude | Turns the task into a spec and a task list (`plan.md`) |
-| Coder | Groq (`openai/gpt-oss-20b`) | Writes code for each task |
-| Reviewer | Gemini | Reviews the code and leaves comments in `review.md` |
-| Tester | Groq (`llama-3.1-8b-instant`) | Writes and runs tests, reports failures |
-| Judge | Claude | Decides if the result is done or needs another round |
+| Role | Provider / model | Responsibility |
+|---|---|---|
+| Planner | Claude | Creates the specification and implementation plan |
+| Coder | Groq — `openai/gpt-oss-20b` | Implements files under `src/` |
+| Reviewer | Gemini — `gemini-2.5-flash` | Reviews generated source |
+| Tester | Groq — `llama-3.1-8b-instant` | Generates pytest files under `tests/` |
+| Judge | Claude | Decides whether another implementation round is needed |
 
-### How it works
+The Reviewer and Tester work in parallel. Their reports go to the Judge; the Coder receives feedback if another round is needed.
 
-1. Planner reads the task and writes `plan.md`.
-2. Coder implements the tasks into `src/`.
-3. Reviewer and Tester check the work in parallel.
-4. Judge reads their feedback; if issues remain, loop back to step 2 (max N rounds).
-5. Every round is logged in `runs/<timestamp>/` so you can see who said what.
+## Setup
 
-### Working together (read this, AI coworkers)
+Requires Python 3.10 or newer.
 
-Several AIs edit this repo. **All communication goes through [`qna.md`](qna.md)**: read it before you start and after you finish, sign every message with your handle, never edit another AI's message, and reply under it. The roster and rules are at the top of that file.
+1. Clone this repository and enter its directory.
+2. Create and activate a virtual environment.
+3. Install dependencies:
 
-### Suggested stack
+   ```bash
+   python -m venv .venv
+   # Windows:
+   .venv\\Scripts\\activate
+   # macOS/Linux:
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
 
-- Python orchestrator (`orchestrator.py`) with one thin adapter per AI provider (`providers/`)
-- Shared state as plain files (markdown + JSON), no database needed
-- Simple CLI: `python orchestrator.py "build a CLI todo app"`
+4. Copy `.env.example` to `.env` and add your API keys:
+   - `ANTHROPIC_API_KEY`
+   - `GROQ_API_KEY`
+   - `GEMINI_API_KEY`
 
-### Milestones
+   Keep `.env` private. Never commit API keys.
 
-- [x] Provider adapters (Claude, Groq, Gemini) behind one `ask(role, prompt)` interface
-- [x] Planner → Coder loop producing runnable code
-- [x] Reviewer + Tester feedback loop
-- [x] Judge and stop condition
-- [ ] Run logs and a small web viewer for the conversation
+## Run
 
-### Why this is fun
+Generated tests are not executed automatically:
 
-Each model has different strengths, so you can swap roles, compare outputs, and see which combinations build the best code.
+```bash
+python orchestrator.py "Build a CLI todo application"
+python orchestrator.py "Build a REST API" --rounds 5
+```
+
+To execute generated pytest files, explicitly opt in:
+
+```bash
+python orchestrator.py "Build a CLI todo application" --run-tests
+```
+
+**Security:** AI-generated code and tests are untrusted. The `--run-tests` option executes generated Python code on your machine. Use it only in a disposable container or another isolated environment, and inspect generated files first.
+
+## Output
+
+Each run is saved under `runs/<timestamp>/`:
+
+- `plan.md` — Planner's specification and task list
+- `src/` — generated application source
+- `tests/` — generated pytest files
+- `review.md` — Reviewer report
+- `tester.md` — Tester report
+- `test-results.txt` — test execution status and output
+- `round-N.md` — round-by-round transcript
+- `log.json` — structured prompts and model responses
+
+Run output is ignored by Git.
+
+## Tests
+
+Run the orchestrator's unit tests:
+
+```bash
+pytest -q
+```
+
+They cover file extraction, nested paths, multiple files, and path traversal protection.
+
+## AI-to-AI communication
+
+Read [qna.md](qna.md) before contributing. It contains the AI roster, communication rules, and append-only message board.
