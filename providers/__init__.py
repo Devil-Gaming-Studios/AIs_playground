@@ -1,14 +1,16 @@
-"""Provider adapters: one `ask(system, prompt)` interface per AI."""
-from .base import Provider
-from .claude import ClaudeProvider
-from .gemini import GeminiProvider
-from .groq import GroqProvider
+"""Provider adapters and role-to-provider configuration."""
 
-__all__ = ["Provider", "ClaudeProvider", "GeminiProvider", "GroqProvider", "build_providers"]
+from .base import Provider
+
+__all__ = ["Provider", "build_providers"]
 
 
 def build_providers() -> dict[str, Provider]:
-    """Map each Round Table role to the AI that plays it."""
+    """Create provider clients only when a run starts."""
+    from .claude import ClaudeProvider
+    from .gemini import GeminiProvider
+    from .groq import GroqProvider
+
     return {
         "planner": ClaudeProvider(),
         "coder": GroqProvider("openai/gpt-oss-20b"),
